@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28010.2036
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "leave_request_bot", "leave_request_bot\leave_request_bot.csproj", "{F6611986-FB7B-471A-AB03-6461F7DF67FA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F6611986-FB7B-471A-AB03-6461F7DF67FA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F6611986-FB7B-471A-AB03-6461F7DF67FA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F6611986-FB7B-471A-AB03-6461F7DF67FA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F6611986-FB7B-471A-AB03-6461F7DF67FA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {525E9227-07C7-4EF4-9446-B695E58FD03C}
+	EndGlobalSection
+EndGlobal
