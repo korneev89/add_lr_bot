@@ -66,14 +66,14 @@ namespace TlgrmBot
 		{
 			if ( e.Message.Text != null && users.TryGetValue(e.Message.From.Id, out string value))
 			{
-				Console.WriteLine($"Received a text message in chat {e.Message.Chat.Id}.");
+				Console.WriteLine( $"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a text message in chat {e.Message.Chat.Id}.");
 				CalendarEvent.Clear(calendarEvent);
 
 				switch (e.Message.Text)
 				{
 					case "/help":
 					case "/?":
-						await botClient.SendTextMessageAsync(
+						botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: "Бот создает событие в календаре *\"Leave Requests\"* [[SED]]\nПришли мне /start",
 							parseMode: ParseMode.Markdown
@@ -98,7 +98,7 @@ namespace TlgrmBot
 								cancelButtonRow
 							};
 
-						await botClient.SendTextMessageAsync(
+						botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: "Когда поставить leave request?",
 							replyMarkup: new InlineKeyboardMarkup(kb_days)
@@ -106,7 +106,7 @@ namespace TlgrmBot
 						break;
 
 					default:
-						await botClient.SendTextMessageAsync(
+						botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: "Я не знаю такой команды, смотри /help"
 						);
@@ -116,9 +116,9 @@ namespace TlgrmBot
 			if (!users.TryGetValue(e.Message.From.Id, out string value_1))
 			{
 				Console.WriteLine($"Received a text message from unauthorized user with id {e.Message.From.Id}.");
-				await botClient.SendTextMessageAsync(
+				botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
-							text: "Дружок, ты не авторизован! Попроси [Димана](tg://user?id=168694373), чтобы добавил тебя",
+							text: $"Дружок, ты не авторизован! Попроси [Димана](tg://user?id=168694373), чтобы добавил тебя. Твой id {e.Message.From.Id}",
 							parseMode: ParseMode.Markdown
 						);
 			}
@@ -208,12 +208,11 @@ namespace TlgrmBot
 
 			if (e.CallbackQuery.Data != null)
 			{
-				Console.WriteLine($"Received a callback query {e.CallbackQuery.Data} in chat {e.CallbackQuery.Message.Chat.Id}.");
+				Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a callback query {e.CallbackQuery.Data} in chat {e.CallbackQuery.Message.Chat.Id}.");
+				botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
 
 				switch (Regex.Replace(e.CallbackQuery.Data, @"[\d-]", string.Empty))
-					//e.CallbackQuery.Data)
 				{
-
 					case "today":
 					case "tomorrow":
 
@@ -227,8 +226,8 @@ namespace TlgrmBot
 								cancelButtonRow
 							};
 
-						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						await botClient.SendTextMessageAsync(
+						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"Со скольки?",
 							replyMarkup: new InlineKeyboardMarkup(kb_start_hours)
@@ -249,8 +248,8 @@ namespace TlgrmBot
 								cancelButtonRow
 							};
 
-						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						await botClient.SendTextMessageAsync(
+						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"И до скольки?",
 							replyMarkup: new InlineKeyboardMarkup(kb_end_hours)
@@ -260,7 +259,7 @@ namespace TlgrmBot
 
 					case "end":
 						//1-18
-						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
 						calendarEvent.End = int.Parse(e.CallbackQuery.Data.Replace("end", string.Empty));
 
 						if (users[e.CallbackQuery.From.Id] != null)
@@ -283,13 +282,13 @@ namespace TlgrmBot
 							author = $"[id]{e.CallbackQuery.From.Id}";
 						}
 
-						DateTime nowUTC = DateTime.UtcNow;
-						DateTime workdayBeginningUTC = new DateTime(nowUTC.Year, nowUTC.Month, nowUTC.Day, 7, 15, 0, DateTimeKind.Utc);
+						DateTime nowMSC = DateTime.UtcNow.AddHours(3);
+						DateTime workdayBeginningMSC = new DateTime(nowMSC.Year, nowMSC.Month, nowMSC.Day, 10, 15, 0, DateTimeKind.Unspecified);
 
-						if (calendarEvent.Date == "tomorrow") { workdayBeginningUTC = workdayBeginningUTC.AddDays(1); }
+						if (calendarEvent.Date == "tomorrow") { workdayBeginningMSC = workdayBeginningMSC.AddDays(1); }
 
-						DateTime start = workdayBeginningUTC.AddMinutes(calendarEvent.Start * 30);
-						DateTime end = workdayBeginningUTC.AddMinutes(calendarEvent.End * 30);
+						DateTime start = workdayBeginningMSC.AddMinutes(calendarEvent.Start * 30);
+						DateTime end = workdayBeginningMSC.AddMinutes(calendarEvent.End * 30);
 
 						Event lrEvent = new Event
 						{
@@ -298,12 +297,12 @@ namespace TlgrmBot
 							Start = new EventDateTime()
 							{
 								DateTime = start,
-								TimeZone = TimeZoneInfo.Utc.StandardName
+								TimeZone = "Europe/Moscow"
 							},
 							End = new EventDateTime()
 							{
 								DateTime = end,
-								TimeZone = TimeZoneInfo.Utc.StandardName
+								TimeZone = "Europe/Moscow"
 							},
 							Description = "Event created using telegram bot"
 						};
@@ -317,8 +316,8 @@ namespace TlgrmBot
 								//string from = string.Format("{0:[HH:mm] dd.MM.yy}", lrEvent.Start.DateTime);
 								//string to = string.Format("{0:[HH:mm] dd.MM.yy}", lrEvent.End.DateTime);
 								//show Moscow Time
-								string from = string.Format("{0:HH:mm}", lrEvent.Start.DateTime.Value.ToUniversalTime().AddHours(3));
-								string to = string.Format("{0:HH:mm}", lrEvent.End.DateTime.Value.ToUniversalTime().AddHours(3));
+								string from = string.Format("{0:HH:mm}", lrEvent.Start.DateTime.Value);
+								string to = string.Format("{0:HH:mm}", lrEvent.End.DateTime.Value);
 
 								InlineKeyboardButton[] delOrConfirmRow = new InlineKeyboardButton[]
 									{
@@ -332,7 +331,7 @@ namespace TlgrmBot
 									};
 
 								string day = (DateTime.UtcNow.AddHours(3).Date == lrEvent.Start.DateTime.Value.Date) ? "Сегодня" : "Завтра";
-								await botClient.SendTextMessageAsync(
+								botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										parseMode: ParseMode.Markdown,
 										text: $"Cобытие *[{lrEvent.Summary}]* было успешно создано \n{day}, с *{from}* до *{to}*\n\nПоставил случайно или ошибся? Можно удалить!",
@@ -342,7 +341,7 @@ namespace TlgrmBot
 							else
 							{
 								CalendarEvent.Clear(calendarEvent);
-								await botClient.SendTextMessageAsync(
+								botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										text: $"Что-то пошло не так... попробуй ещё раз /start");
 							}
@@ -350,7 +349,7 @@ namespace TlgrmBot
 						else
 						{
 							CalendarEvent.Clear(calendarEvent);
-							await botClient.SendTextMessageAsync(
+							botClient.SendTextMessageAsync(
 									chatId: e.CallbackQuery.From.Id,
 									text: $"Время окончания события указано раньше, время начала... попробуй ещё раз /start");
 						}
@@ -358,25 +357,25 @@ namespace TlgrmBot
 						break;
 
 					case "cancel":
-						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
 						CalendarEvent.Clear(calendarEvent);
 						break;
 
 					default:
-						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
 
 						if (e.CallbackQuery.Data.Substring(0,6) == "delete")
 						{
 							string eventId = e.CallbackQuery.Data.Substring(6);
 							service.Events.Delete(calendarID, eventId).Execute();
 
-							await botClient.SendTextMessageAsync(
+							botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: $"Событие было удалено!");
 						}
 						else
 						{
-							await botClient.SendTextMessageAsync(
+							botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: "Я не знаю такой команды, смотри /help"
 							);
@@ -385,58 +384,8 @@ namespace TlgrmBot
 						CalendarEvent.Clear(calendarEvent);
 						break;
 				}
-
-				await botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
 			}
 		}
-
-		//private static string CreateTrueURL(CalendarEvent calendarEvent)
-		//{
-		//	DateTime today = DateTime.UtcNow.AddHours(3);
-		//	var start = new DateTime(today.Year, today.Month, today.Day, 10, 15, 0);
-		//	start.AddMinutes(calendarEvent.Start * 30);
-		//	if (calendarEvent.Date == "tomorrow") { start = start.AddDays(1); }
-
-		//	var end = start.AddMinutes(calendarEvent.End * 30);
-
-		//	string s = string.Format("{0:yyyyMMddTHHmmss}", start);
-		//	string e = string.Format("{0:yyyyMMddTHHmmss}", end);
-
-		//	return $"https://calendar.google.com/calendar/r/eventedit?text={calendarEvent.Name}'s leave request&dates={s}/{e}&details=Event created using telegram bot&src=cbsinteractive.com_rpv5nbaapi6193eihuqg0ucvg0%40group.calendar.google.com";
-		//}
-
-		// USING CHROME AND SELENIUM
-
-		//ChromeOptions options = new ChromeOptions();
-
-		////options.AddArgument("headless");
-		////options.AddArgument("--window-size=1280,960");
-
-		//options.AddArguments("user-data-dir=/chrome-profile");
-		//string drvPath = ConfigurationManager.AppSettings["drvPath"];
-		//ChromeDriver driver = new ChromeDriver(drvPath, options)
-		//{
-		//	Url = url
-		//};
-
-		//try
-		//{
-		//	//Thread.Sleep(100000);
-		//	driver.FindElement(By.CssSelector("#xSaveBu")).Click();
-		//	await botClient.SendTextMessageAsync(
-		//		chatId: e.CallbackQuery.From.Id,
-		//		text: $"{calendarEvent.Name} {calendarEvent.Date} ebalo v podushku (10:15 -> {10 + int.Parse(calendarEvent.Hours)}:15)\n\nRequest has been add to calendar");
-		//}
-		//catch (Exception ex)
-		//{
-		//	await botClient.SendTextMessageAsync(
-		//		chatId: e.CallbackQuery.From.Id,
-		//		text: $"Диман не умеет кодить - лови эксепцию!\n\n{ex.Message}");
-		//}
-		//finally
-		//{
-		//	driver.Quit();
-		//}
 	}
 }
 
