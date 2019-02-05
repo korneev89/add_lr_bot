@@ -27,8 +27,9 @@ namespace TlgrmBot
 		static readonly string calendarID = ConfigurationManager.AppSettings["calendarID"];
 		static readonly string token = ConfigurationManager.AppSettings["token"];
 		static readonly Dictionary<int, string> users = File.ReadLines(Helper.FullPathToFile(@"users.csv")).Select(line => line.Split(';')).ToDictionary(line => int.Parse(line[0]), line => line[1]);
+        static readonly Dictionary<long, string> starts = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => line[1]);
 
-		static void Main()
+        static void Main()
 		{
 			botClient = new TelegramBotClient(token);
 			UserCredential credential;
@@ -49,7 +50,7 @@ namespace TlgrmBot
 			service = new CalendarService(new BaseClientService.Initializer()
 			{
 				HttpClientInitializer = credential,
-				ApplicationName = ApplicationName,
+				ApplicationName = ApplicationName
 			});
 
 			var me = botClient.GetMeAsync().Result;
@@ -126,108 +127,22 @@ namespace TlgrmBot
 
 		static async void Bot_OnCallback(object sender, CallbackQueryEventArgs e)
 		{
-			InlineKeyboardButton[] startButtonRow1 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("10:45", "start1"),
-					InlineKeyboardButton.WithCallbackData("11:15", "start2"),
-					InlineKeyboardButton.WithCallbackData("11:45", "start3"),
-					InlineKeyboardButton.WithCallbackData("12:15", "start4")
-				};
-
-			InlineKeyboardButton[] startButtonRow2 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("12:45", "start5"),
-					InlineKeyboardButton.WithCallbackData("13:15", "start6"),
-					InlineKeyboardButton.WithCallbackData("13:45", "start7"),
-					InlineKeyboardButton.WithCallbackData("14:15", "start8")
-				};
-
-			InlineKeyboardButton[] startButtonRow3 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("14:45", "start9"),
-					InlineKeyboardButton.WithCallbackData("15:15", "start10"),
-					InlineKeyboardButton.WithCallbackData("15:45", "start11"),
-					InlineKeyboardButton.WithCallbackData("16:15", "start12")
-				};
-
-			InlineKeyboardButton[] startButtonRow4 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("16:45", "start13"),
-					InlineKeyboardButton.WithCallbackData("17:15", "start14"),
-					InlineKeyboardButton.WithCallbackData("17:45", "start15"),
-					InlineKeyboardButton.WithCallbackData("18:15", "start16")
-				};
-
-			InlineKeyboardButton[] endButtonRow1 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("10:45", "end1"),
-					InlineKeyboardButton.WithCallbackData("11:15", "end2"),
-					InlineKeyboardButton.WithCallbackData("11:45", "end3"),
-					InlineKeyboardButton.WithCallbackData("12:15", "end4")
-				};
-
-			InlineKeyboardButton[] endButtonRow2 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("12:45", "end5"),
-					InlineKeyboardButton.WithCallbackData("13:15", "end6"),
-					InlineKeyboardButton.WithCallbackData("13:45", "end7"),
-					InlineKeyboardButton.WithCallbackData("14:15", "end8")
-				};
-
-			InlineKeyboardButton[] endButtonRow3 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("14:45", "end9"),
-					InlineKeyboardButton.WithCallbackData("15:15", "end10"),
-					InlineKeyboardButton.WithCallbackData("15:45", "end11"),
-					InlineKeyboardButton.WithCallbackData("16:15", "end12")
-				};
-
-			InlineKeyboardButton[] endButtonRow4 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("16:45", "end13"),
-					InlineKeyboardButton.WithCallbackData("17:15", "end14"),
-					InlineKeyboardButton.WithCallbackData("17:45", "end15"),
-					InlineKeyboardButton.WithCallbackData("18:15", "end16")
-				};
-
-			InlineKeyboardButton[] endButtonRow5 = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("18:45", "end17"),
-					InlineKeyboardButton.WithCallbackData("19:15", "end18")
-				};
-
-			InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
-				};
-
-			InlineKeyboardButton[] startButtonRow = new InlineKeyboardButton[]
-				{
-					InlineKeyboardButton.WithCallbackData("10:15", "start0")
-				};
-
 			if (e.CallbackQuery.Data != null)
 			{
 				Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a callback query {e.CallbackQuery.Data} in chat {e.CallbackQuery.Message.Chat.Id}.");
-				botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
-				switch (Regex.Replace(e.CallbackQuery.Data, @"[\d-]", string.Empty))
+                switch (Regex.Replace(e.CallbackQuery.Data, @"[\d-]", string.Empty))
 				{
 					case "today":
 					case "tomorrow":
 
-						InlineKeyboardButton[][] kb_start_hours = new InlineKeyboardButton[][]
-							{
-								startButtonRow,
-								startButtonRow1,
-								startButtonRow2,
-								startButtonRow3,
-								startButtonRow4,
-								cancelButtonRow
-							};
+                        InlineKeyboardButton[][] kb_start_hours = CreateStartHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
 
-						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						botClient.SendTextMessageAsync(
+						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						await botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"Со скольки?",
 							replyMarkup: new InlineKeyboardMarkup(kb_start_hours)
@@ -238,18 +153,10 @@ namespace TlgrmBot
 
 					case "start":
 						//0-16
-						InlineKeyboardButton[][] kb_end_hours = new InlineKeyboardButton[][]
-							{
-								endButtonRow1,
-								endButtonRow2,
-								endButtonRow3,
-								endButtonRow4,
-								endButtonRow5,
-								cancelButtonRow
-							};
+						InlineKeyboardButton[][] kb_end_hours = CreateEndHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
 
-						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						botClient.SendTextMessageAsync(
+                        await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						await botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"И до скольки?",
 							replyMarkup: new InlineKeyboardMarkup(kb_end_hours)
@@ -283,12 +190,22 @@ namespace TlgrmBot
 						}
 
 						DateTime nowMSC = DateTime.UtcNow.AddHours(3);
-						DateTime workdayBeginningMSC = new DateTime(nowMSC.Year, nowMSC.Month, nowMSC.Day, 10, 15, 0, DateTimeKind.Unspecified);
 
-						if (calendarEvent.Date == "tomorrow") { workdayBeginningMSC = workdayBeginningMSC.AddDays(1); }
+                        int start_hour = 0;
+                        int start_min = 0;
 
-						DateTime start = workdayBeginningMSC.AddMinutes(calendarEvent.Start * 30);
-						DateTime end = workdayBeginningMSC.AddMinutes(calendarEvent.End * 30);
+                        if (starts[e.CallbackQuery.From.Id] != null)
+                        {
+                            var parts = starts[e.CallbackQuery.From.Id].Split('.');
+                            start_hour = int.Parse(parts[0]);
+                            start_min = int.Parse(parts[1]);
+                        }
+                        DateTime workdayBeginningUTC = new DateTime(nowMSC.Year, nowMSC.Month, nowMSC.Day, start_hour - 3, start_min, 0, DateTimeKind.Utc);
+
+						if (calendarEvent.Date == "tomorrow") { workdayBeginningUTC = workdayBeginningUTC.AddDays(1); }
+
+						DateTime start = workdayBeginningUTC.AddMinutes(calendarEvent.Start * 30);
+						DateTime end = workdayBeginningUTC.AddMinutes(calendarEvent.End * 30);
 
 						Event lrEvent = new Event
 						{
@@ -313,11 +230,8 @@ namespace TlgrmBot
 							{
 								Event recurringEvent = service.Events.Insert(lrEvent, calendarID).Execute();
 
-								//string from = string.Format("{0:[HH:mm] dd.MM.yy}", lrEvent.Start.DateTime);
-								//string to = string.Format("{0:[HH:mm] dd.MM.yy}", lrEvent.End.DateTime);
-								//show Moscow Time
-								string from = string.Format("{0:HH:mm}", lrEvent.Start.DateTime.Value);
-								string to = string.Format("{0:HH:mm}", lrEvent.End.DateTime.Value);
+								string from = string.Format("{0:HH:mm}", start.AddHours(3));
+								string to = string.Format("{0:HH:mm}", end.AddHours(3));
 
 								InlineKeyboardButton[] delOrConfirmRow = new InlineKeyboardButton[]
 									{
@@ -331,7 +245,7 @@ namespace TlgrmBot
 									};
 
 								string day = (DateTime.UtcNow.AddHours(3).Date == lrEvent.Start.DateTime.Value.Date) ? "Сегодня" : "Завтра";
-								botClient.SendTextMessageAsync(
+								await botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										parseMode: ParseMode.Markdown,
 										text: $"Cобытие *[{lrEvent.Summary}]* было успешно создано \n{day}, с *{from}* до *{to}*\n\nПоставил случайно или ошибся? Можно удалить!",
@@ -341,7 +255,7 @@ namespace TlgrmBot
 							else
 							{
 								CalendarEvent.Clear(calendarEvent);
-								botClient.SendTextMessageAsync(
+								await botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										text: $"Что-то пошло не так... попробуй ещё раз /start");
 							}
@@ -349,7 +263,7 @@ namespace TlgrmBot
 						else
 						{
 							CalendarEvent.Clear(calendarEvent);
-							botClient.SendTextMessageAsync(
+							await botClient.SendTextMessageAsync(
 									chatId: e.CallbackQuery.From.Id,
 									text: $"Время окончания события указано раньше, время начала... попробуй ещё раз /start");
 						}
@@ -369,13 +283,13 @@ namespace TlgrmBot
 							string eventId = e.CallbackQuery.Data.Substring(6);
 							service.Events.Delete(calendarID, eventId).Execute();
 
-							botClient.SendTextMessageAsync(
+							await botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: $"Событие было удалено!");
 						}
 						else
 						{
-							botClient.SendTextMessageAsync(
+							await botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: "Я не знаю такой команды, смотри /help"
 							);
@@ -386,14 +300,96 @@ namespace TlgrmBot
 				}
 			}
 		}
-	}
+
+        private static InlineKeyboardButton[][] CreateEndHoursKeyboard(long chatId)
+        {
+            InlineKeyboardButton[] endButtonRow5 = new InlineKeyboardButton[]
+                {
+                    InlineKeyboardButton.WithCallbackData("18:45", "end17"),
+                    InlineKeyboardButton.WithCallbackData("19:15", "end18")
+                };
+
+            InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
+                {
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                };
+            return new InlineKeyboardButton[][]
+                {
+                                CreateEndButtonRow(chatId, 0),
+                                CreateEndButtonRow(chatId, 1),
+                                CreateEndButtonRow(chatId, 2),
+                                CreateEndButtonRow(chatId, 3),
+                                endButtonRow5,
+                                cancelButtonRow
+                };
+        }
+
+        private static InlineKeyboardButton[] CreateEndButtonRow(long chatId, int rowId)
+        {
+            return new InlineKeyboardButton[]
+                {
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 1), "end" + (rowId * 4 + 1).ToString() ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 2), "end" + (rowId * 4 + 2).ToString() ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 3), "end" + (rowId * 4 + 3).ToString() ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 4), "end" + (rowId * 4 + 4).ToString() )
+                };
+        }
+
+        private static InlineKeyboardButton[][] CreateStartHoursKeyboard(long chatId)
+        {
+            InlineKeyboardButton[] startButtonRow = new InlineKeyboardButton[]
+                {
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, 0), "start0")
+                };
+
+            InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
+                {
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                };
+
+            return new InlineKeyboardButton[][]
+                            {
+                                startButtonRow,
+                                CreateStartButtonRow(chatId, 0),
+                                CreateStartButtonRow(chatId, 1),
+                                CreateStartButtonRow(chatId, 2),
+                                CreateStartButtonRow(chatId, 3),
+                                cancelButtonRow
+                            };
+        }
+
+        private static InlineKeyboardButton[] CreateStartButtonRow(long chatId, int rowId)
+        {
+            return new InlineKeyboardButton[]
+                {
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 1), "start" + (rowId * 4 + 1).ToString() ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 2), "start" + (rowId * 4 + 2).ToString() ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 3), "start" + (rowId * 4 + 3).ToString() ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 4), "start" + (rowId * 4 + 4).ToString() )
+                };
+        }
+
+        private static string TimeValue(long chatId, int delta)
+        {
+            int start_hour = 0;
+            int start_min = 0;
+
+            if (starts[chatId] != null)
+            {
+                var parts = starts[chatId].Split('.');
+                start_hour = int.Parse(parts[0]);
+                start_min = int.Parse(parts[1]);
+            }
+
+            int hour_with_delta = start_hour + (30 * delta) / 60;
+            int min_with_delta = (start_min + 30 * delta) % 60;
+            string mins_with_zero;
+            if (min_with_delta == 0) { mins_with_zero = "00"; }
+            else { mins_with_zero = min_with_delta.ToString(); }
+
+            string[] time = { hour_with_delta.ToString(), mins_with_zero };
+            return string.Join(":", time);
+
+        }
+    }
 }
-
-
-
-
-
-
-
-
-
