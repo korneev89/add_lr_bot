@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Google.Apis.Auth.OAuth2;
@@ -10,6 +11,7 @@ using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
+using MihaZupan;
 using Telegram.Bot;
 using Telegram.Bot.Args;
 using Telegram.Bot.Types.Enums;
@@ -26,12 +28,16 @@ namespace TlgrmBot
 		static CalendarService service;
 		static readonly string calendarID = ConfigurationManager.AppSettings["calendarID"];
 		static readonly string token = ConfigurationManager.AppSettings["token"];
-		static readonly Dictionary<int, string> users = File.ReadLines(Helper.FullPathToFile(@"users.csv")).Select(line => line.Split(';')).ToDictionary(line => int.Parse(line[0]), line => line[1]);
+        static readonly string botLaunchTimeUTC = string.Format("{0:[HH:mm:ss] dd.MM.yyyy}", DateTime.UtcNow);
+        static readonly Dictionary<int, string> users = File.ReadLines(Helper.FullPathToFile(@"users.csv")).Select(line => line.Split(';')).ToDictionary(line => int.Parse(line[0]), line => line[1]);
         static readonly Dictionary<long, string> starts = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => line[1]);
 
         static void Main()
 		{
-			botClient = new TelegramBotClient(token);
+            //var proxy = new HttpToSocks5Proxy("51.144.50.115", 1488, "sockduser", "SerejaTigr");
+            //botClient = new TelegramBotClient(token, proxy);
+
+            botClient = new TelegramBotClient(token);
 			UserCredential credential;
 
 			using (var stream =
@@ -58,7 +64,10 @@ namespace TlgrmBot
 			  $"Hello, World! I am user {me.Id} and my name is {me.FirstName}."
 			);
 
-			botClient.OnMessage += Bot_OnMessage;
+            string str = Dns.GetHostAddresses(Environment.MachineName).Last().ToString();
+            botClient.SendTextMessageAsync(users.First().Key, "Чувак, я жив!\nHostame: *" + Environment.MachineName + "*\nIP: " + str + "\n\nWITHOUT PROXY ", ParseMode.Markdown);
+
+            botClient.OnMessage += Bot_OnMessage;
 			botClient.OnCallbackQuery += Bot_OnCallback;
 			botClient.StartReceiving();
 			Thread.Sleep(int.MaxValue);
@@ -67,21 +76,74 @@ namespace TlgrmBot
 		{
 			if ( e.Message.Text != null && users.TryGetValue(e.Message.From.Id, out string value))
 			{
-				Console.WriteLine( $"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a text message in chat {e.Message.Chat.Id}.");
-				CalendarEvent.Clear(calendarEvent);
+				Console.WriteLine( $"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a text message \"{e.Message.Text}\" in chat with {users[e.Message.From.Id]}.");
+                CalendarEvent.Clear(calendarEvent);
 
-				switch (e.Message.Text)
+                switch (e.Message.Text)
 				{
 					case "/help":
 					case "/?":
-						botClient.SendTextMessageAsync(
-							chatId: e.Message.Chat,
-							text: "Бот создает событие в календаре *\"Leave Requests\"* [[SED]]\nПришли мне /start",
-							parseMode: ParseMode.Markdown
-						);
-						break;
+                        botClient.SendTextMessageAsync(
+                            chatId: e.Message.Chat,
+                            text: "Бот создает событие в календаре *\"Leave Requests\"* [[SED]]\nПришли мне /start",
+                            parseMode: ParseMode.Markdown
+                        );
+                        break;
+                    case "/host":
+                        string ip = Dns.GetHostAddresses(Environment.MachineName).Last().ToString();
+                        botClient.SendTextMessageAsync(
+                            chatId: e.Message.Chat,
+                            text: "Hostame: *" + Environment.MachineName + " *\nIP: " + ip + "\nStarted [UTC]: " + botLaunchTimeUTC + "\nWITHOUT PROXY",
+                            parseMode: ParseMode.Markdown
+                        );
+                        break;
 
-					case "/start":
+
+
+                    case "/del":
+                        var rq = service.Events.List(calendarID);
+                        rq.TimeMin = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, 0, 0, 0, DateTimeKind.Utc);
+                        IList<Event> allEvents = rq.Execute().Items;
+
+                        IList<Event> userEvents = allEvents.Where(ev => ev.Creator.Email == "dmitri.korneev@cbsinteractive.com" 
+                            && ev.Summary == $"{users[e.Message.From.Id]}'s leave request").OrderBy(ev => ev.Start.DateTime).ToList();
+
+                        InlineKeyboardButton[][] kb_del = new InlineKeyboardButton[userEvents.Count+1][];
+
+                        var txt = "Нет событий для удаления...";
+
+                        if (userEvents.Count > 0)
+                        {
+                            int i = 0;
+                            txt = "Выбери событие которое нужно удалить:";
+                            foreach (Event ev in userEvents)
+                            {
+                                string day;
+                                if (string.Format("{0:dd/MM/yy}", ev.Start.DateTime) == string.Format("{0:dd/MM/yy}", DateTime.UtcNow.AddHours(3))) { day = "сегодня"; }
+                                else if (string.Format("{0:dd/MM/yy}", ev.Start.DateTime) == string.Format("{0:dd/MM/yy}", DateTime.UtcNow.AddHours(3).AddDays(1))) { day = "завтра"; }
+                                else { day = string.Format("{0:dd/MM}", ev.Start.DateTime); }
+                                kb_del[i] = new InlineKeyboardButton[]
+                                    {
+                                        InlineKeyboardButton.WithCallbackData($"{day} | {string.Format("{0:HH:mm}", ev.Start.DateTime)} - {string.Format("{0:HH:mm}", ev.End.DateTime)}", $"delete{ev.Id}")
+                                    };
+                                i++;
+                            }
+                        }
+
+                        kb_del[userEvents.Count] = new InlineKeyboardButton[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                        };
+
+                        botClient.SendTextMessageAsync(
+                            chatId: e.Message.Chat,
+                            text: txt,
+                            replyMarkup: new InlineKeyboardMarkup(kb_del),
+                            parseMode: ParseMode.Markdown
+                        );
+                        break;
+
+                    case "/start":
 						InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
 							{
 								InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
@@ -116,7 +178,7 @@ namespace TlgrmBot
 			}
 			if (!users.TryGetValue(e.Message.From.Id, out string value_1))
 			{
-				Console.WriteLine($"Received a text message from unauthorized user with id {e.Message.From.Id}.");
+				Console.WriteLine($"Received a text message from unauthorized user with id {e.Message.From.ToString()}.");
 				botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: $"Дружок, ты не авторизован! Попроси [Димана](tg://user?id=168694373), чтобы добавил тебя. Твой id {e.Message.From.Id}",
@@ -129,10 +191,8 @@ namespace TlgrmBot
 		{
 			if (e.CallbackQuery.Data != null)
 			{
-				Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a callback query {e.CallbackQuery.Data} in chat {e.CallbackQuery.Message.Chat.Id}.");
-#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+				Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a callback query \"{e.CallbackQuery.Data}\" in chat with {users[e.CallbackQuery.From.Id]}.");
                 botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
                 switch (Regex.Replace(e.CallbackQuery.Data, @"[\d-]", string.Empty))
 				{
@@ -141,8 +201,8 @@ namespace TlgrmBot
 
                         InlineKeyboardButton[][] kb_start_hours = CreateStartHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
 
-						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						await botClient.SendTextMessageAsync(
+						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"Со скольки?",
 							replyMarkup: new InlineKeyboardMarkup(kb_start_hours)
@@ -155,8 +215,8 @@ namespace TlgrmBot
 						//0-16
 						InlineKeyboardButton[][] kb_end_hours = CreateEndHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
 
-                        await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						await botClient.SendTextMessageAsync(
+                        botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+						botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"И до скольки?",
 							replyMarkup: new InlineKeyboardMarkup(kb_end_hours)
@@ -172,7 +232,8 @@ namespace TlgrmBot
 						if (users[e.CallbackQuery.From.Id] != null)
 						{
 							calendarEvent.Name = users[e.CallbackQuery.From.Id];
-						}
+
+                        }
 						else
 						{
 							CalendarEvent.Clear(calendarEvent);
@@ -245,7 +306,7 @@ namespace TlgrmBot
 									};
 
 								string day = (DateTime.UtcNow.AddHours(3).Date == lrEvent.Start.DateTime.Value.Date) ? "Сегодня" : "Завтра";
-								await botClient.SendTextMessageAsync(
+								botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										parseMode: ParseMode.Markdown,
 										text: $"Cобытие *[{lrEvent.Summary}]* было успешно создано \n{day}, с *{from}* до *{to}*\n\nПоставил случайно или ошибся? Можно удалить!",
@@ -255,7 +316,7 @@ namespace TlgrmBot
 							else
 							{
 								CalendarEvent.Clear(calendarEvent);
-								await botClient.SendTextMessageAsync(
+								botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										text: $"Что-то пошло не так... попробуй ещё раз /start");
 							}
@@ -263,7 +324,7 @@ namespace TlgrmBot
 						else
 						{
 							CalendarEvent.Clear(calendarEvent);
-							await botClient.SendTextMessageAsync(
+							botClient.SendTextMessageAsync(
 									chatId: e.CallbackQuery.From.Id,
 									text: $"Время окончания события указано раньше, время начала... попробуй ещё раз /start");
 						}
@@ -281,15 +342,25 @@ namespace TlgrmBot
 						if (e.CallbackQuery.Data.Substring(0,6) == "delete")
 						{
 							string eventId = e.CallbackQuery.Data.Substring(6);
-							service.Events.Delete(calendarID, eventId).Execute();
+                            try
+                            {
+                                service.Events.Delete(calendarID, eventId).Execute();
+                                botClient.SendTextMessageAsync(
+                                chatId: e.CallbackQuery.From.Id,
+                                text: $"Событие удалено!");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Exeption: {ex.Message}");
 
-							await botClient.SendTextMessageAsync(
-								chatId: e.CallbackQuery.From.Id,
-								text: $"Событие было удалено!");
+                                botClient.SendTextMessageAsync(
+                                chatId: e.CallbackQuery.From.Id,
+                                text: $"Событие уже было удалено!");
+                            }
 						}
 						else
 						{
-							await botClient.SendTextMessageAsync(
+							botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: "Я не знаю такой команды, смотри /help"
 							);
