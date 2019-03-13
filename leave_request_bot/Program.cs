@@ -22,7 +22,6 @@ namespace TlgrmBot
 	class Program
 	{
 		static ITelegramBotClient botClient;
-		static CalendarEvent calendarEvent = new CalendarEvent();
 		static readonly string[] Scopes = { CalendarService.Scope.CalendarEvents };
 		static string ApplicationName = "Google Calendar API - DKOR TLGRM BOT";
 		static CalendarService service;
@@ -31,6 +30,7 @@ namespace TlgrmBot
         static readonly string botLaunchTimeUTC = string.Format("{0:[HH:mm:ss] dd.MM.yyyy}", DateTime.UtcNow);
         static readonly Dictionary<int, string> users = File.ReadLines(Helper.FullPathToFile(@"users.csv")).Select(line => line.Split(';')).ToDictionary(line => int.Parse(line[0]), line => line[1]);
         static readonly Dictionary<long, string> starts = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => line[1]);
+        static readonly Dictionary<long, CalendarEvent> calendarEvents = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => new CalendarEvent());
 
         static void Main()
 		{
@@ -69,7 +69,7 @@ namespace TlgrmBot
 
             botClient.OnMessage += Bot_OnMessage;
 			botClient.OnCallbackQuery += Bot_OnCallback;
-			botClient.StartReceiving();
+            botClient.StartReceiving();
 			Thread.Sleep(int.MaxValue);
 		}
 		static async void Bot_OnMessage(object sender, MessageEventArgs e)
@@ -77,99 +77,169 @@ namespace TlgrmBot
 			if ( e.Message.Text != null && users.TryGetValue(e.Message.From.Id, out string value))
 			{
 				Console.WriteLine( $"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a text message \"{e.Message.Text}\" in chat with {users[e.Message.From.Id]}.");
-                CalendarEvent.Clear(calendarEvent);
+                CalendarEvent.Clear(calendarEvents[e.Message.From.Id]);
+
+                List<InlineKeyboardButton> cancelButtonRow = new List<InlineKeyboardButton>
+                {
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                };
+
+                List<InlineKeyboardButton> okButtonRow = new List<InlineKeyboardButton>
+                {
+                    InlineKeyboardButton.WithCallbackData("✅ ОK", "cancel")
+                };
 
                 switch (e.Message.Text)
 				{
 					case "/help":
 					case "/?":
-                        botClient.SendTextMessageAsync(
+                       await botClient.SendTextMessageAsync(
                             chatId: e.Message.Chat,
-                            text: "Бот создает событие в календаре *\"Leave Requests\"* [[SED]]\nПришли мне /start",
+                            text: "Утром лицо застряло в текстурах подушки? Бот добавит/удалит событие в календаре [[SED]] *\"Leave Requests\"*" +
+                            "\n\n/start \"Диме плохо\" или добавить событие" +
+                            "\n/del если выбрался из текстур и нужно удалить событие" +
+                            "\n/show те кто не смог или не сможет завтра",
                             parseMode: ParseMode.Markdown
                         );
                         break;
                     case "/host":
-                        string ip = Dns.GetHostAddresses(Environment.MachineName).Last().ToString();
-                        botClient.SendTextMessageAsync(
+                       string ip = Dns.GetHostAddresses(Environment.MachineName).Last().ToString();
+                       await botClient.SendTextMessageAsync(
                             chatId: e.Message.Chat,
                             text: "Hostame: *" + Environment.MachineName + " *\nIP: " + ip + "\nStarted [UTC]: " + botLaunchTimeUTC + "\nWITHOUT PROXY",
                             parseMode: ParseMode.Markdown
                         );
                         break;
 
-
-
                     case "/del":
                         var rq = service.Events.List(calendarID);
-                        rq.TimeMin = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, 0, 0, 0, DateTimeKind.Utc);
+                        rq.TimeMin = DateTime.UtcNow.Date;
                         IList<Event> allEvents = rq.Execute().Items;
-
-                        IList<Event> userEvents = allEvents.Where(ev => ev.Creator.Email == "dmitri.korneev@cbsinteractive.com" 
-                            && ev.Summary == $"{users[e.Message.From.Id]}'s leave request").OrderBy(ev => ev.Start.DateTime).ToList();
-
-                        InlineKeyboardButton[][] kb_del = new InlineKeyboardButton[userEvents.Count+1][];
 
                         var txt = "Нет событий для удаления...";
 
-                        if (userEvents.Count > 0)
+                        List<List<InlineKeyboardButton>> deletionKeyboard = new List<List<InlineKeyboardButton>>();
+
+                        if (allEvents.Count > 0)
                         {
-                            int i = 0;
-                            txt = "Выбери событие которое нужно удалить:";
-                            foreach (Event ev in userEvents)
+                            IList<Event> userEvents = allEvents.Where(ev => ev.Creator?.Email == "dmitri.korneev@cbsinteractive.com"
+                              && ev.Summary == $"{users[e.Message.From.Id]}'s leave request")
+                              .OrderBy(ev => ev.Start.DateTime)
+                              .ThenBy(ev => ev.End.DateTime)
+                              .ToList();
+
+                            if (userEvents.Count > 0)
                             {
-                                string day;
-                                if (string.Format("{0:dd/MM/yy}", ev.Start.DateTime) == string.Format("{0:dd/MM/yy}", DateTime.UtcNow.AddHours(3))) { day = "сегодня"; }
-                                else if (string.Format("{0:dd/MM/yy}", ev.Start.DateTime) == string.Format("{0:dd/MM/yy}", DateTime.UtcNow.AddHours(3).AddDays(1))) { day = "завтра"; }
-                                else { day = string.Format("{0:dd/MM}", ev.Start.DateTime); }
-                                kb_del[i] = new InlineKeyboardButton[]
+                                txt = "Выбери событие которое нужно удалить:";
+
+                                foreach (Event ev in userEvents)
+                                {
+                                    string day;
+                                    int delta = 3 - (DateTime.Now.Hour - DateTime.UtcNow.Hour); // 3 hour - for MSC time shift
+
+                                    if ( ev.Start.DateTime.Value.Date == DateTime.UtcNow.AddHours(3).Date )
                                     {
-                                        InlineKeyboardButton.WithCallbackData($"{day} | {string.Format("{0:HH:mm}", ev.Start.DateTime)} - {string.Format("{0:HH:mm}", ev.End.DateTime)}", $"delete{ev.Id}")
+                                        day = "сегодня";
+                                    }
+                                    else if ( ev.Start.DateTime.Value.Date == DateTime.UtcNow.AddHours(3).AddDays(1).Date )
+                                    {
+                                        day = "завтра";
+                                    }
+                                    else
+                                    {
+                                        day = string.Format("{0:dd/MM}", ev.Start.DateTime);
+                                    }
+
+                                    List<InlineKeyboardButton> buttonRow = new List<InlineKeyboardButton>
+                                    {
+                                        InlineKeyboardButton.WithCallbackData($"{day} | {string.Format("{0:HH:mm}", ev.Start.DateTime.Value.AddHours(delta))} - {string.Format("{0:HH:mm}", ev.End.DateTime.Value.AddHours(delta))}", $"delete{ev.Id}")
                                     };
-                                i++;
+
+                                    deletionKeyboard.Add(buttonRow);
+                                }
+                                deletionKeyboard.Add(cancelButtonRow);
                             }
                         }
 
-                        kb_del[userEvents.Count] = new InlineKeyboardButton[]
+                        else
                         {
-                            InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
-                        };
+                            deletionKeyboard.Add(okButtonRow);
+                        }
 
-                        botClient.SendTextMessageAsync(
+                        await botClient.SendTextMessageAsync(
                             chatId: e.Message.Chat,
                             text: txt,
-                            replyMarkup: new InlineKeyboardMarkup(kb_del),
+                            replyMarkup: new InlineKeyboardMarkup(deletionKeyboard),
+                            parseMode: ParseMode.Markdown
+                        );
+                        break;
+
+                    case "/show":
+                        var req = service.Events.List(calendarID);
+                        req.TimeMin = DateTime.UtcNow.Date;
+                        IList<Event> events = req.Execute().Items;
+
+                        IList<Event> evs = events.Where(ev => ev.Creator?.Email == "dmitri.korneev@cbsinteractive.com"
+                            && ev.Description == "Event created using telegram bot").
+                            OrderBy(ev => ev.Start.DateTime).
+                            ThenBy(ev => ev.End.DateTime).
+                            ThenBy(ev => ev.Summary).
+                            ToList();
+
+                        var msg = "На сегодня и завтра нет созданных событий 🤷‍♂️";
+
+                        if (evs.Count > 0)
+                        {
+
+                            msg = "Кто рано встает - их тут нет:\n";
+                            foreach (Event ev in evs)
+                            {
+                                string day;
+                                int delta = 3 - (DateTime.Now.Hour - DateTime.UtcNow.Hour); // 3 hour - for MSC time shift
+                                if (string.Format("{0:dd/MM/yy}", ev.Start.DateTime) == string.Format("{0:dd/MM/yy}", DateTime.UtcNow.AddHours(3))) { day = "сегодня"; }
+                                else if (string.Format("{0:dd/MM/yy}", ev.Start.DateTime) == string.Format("{0:dd/MM/yy}", DateTime.UtcNow.AddHours(3).AddDays(1))) { day = "завтра"; }
+                                else { day = string.Format("{0:dd/MM}", ev.Start.DateTime); }
+
+                                msg += $"\n{ev.Summary.Replace("'s leave request", string.Empty)} | {day} | {string.Format("{0:HH:mm}", ev.Start.DateTime.Value.AddHours(delta))} - {string.Format("{0:HH:mm}", ev.End.DateTime.Value.AddHours(delta))}";
+                            }
+                        }
+
+                        List<List<InlineKeyboardButton>> showKeyboard = new List<List<InlineKeyboardButton>>
+                        {
+                            okButtonRow
+                        };
+
+                        await botClient.SendTextMessageAsync(
+                            chatId: e.Message.Chat,
+                            text: msg,
+                            replyMarkup: new InlineKeyboardMarkup(showKeyboard),
                             parseMode: ParseMode.Markdown
                         );
                         break;
 
                     case "/start":
-						InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
-							{
-								InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
-							};
 
-						InlineKeyboardButton[] daysButtonRow = new InlineKeyboardButton[]
-							{
+                        List<InlineKeyboardButton> daysButtonRow = new List<InlineKeyboardButton>
+                            {
 								InlineKeyboardButton.WithCallbackData("сегодня", "today"),
 								InlineKeyboardButton.WithCallbackData("завтра", "tomorrow")
 							};
 
-						InlineKeyboardButton[][] kb_days = new InlineKeyboardButton[][]
+                        List<List<InlineKeyboardButton>> daysKeyboard = new List<List<InlineKeyboardButton>>
 							{
 								daysButtonRow,
 								cancelButtonRow
 							};
 
-						botClient.SendTextMessageAsync(
+						await botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: "Когда поставить leave request?",
-							replyMarkup: new InlineKeyboardMarkup(kb_days)
+							replyMarkup: new InlineKeyboardMarkup(daysKeyboard)
 							);
 						break;
 
 					default:
-						botClient.SendTextMessageAsync(
+                        await botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: "Я не знаю такой команды, смотри /help"
 						);
@@ -179,7 +249,7 @@ namespace TlgrmBot
 			if (!users.TryGetValue(e.Message.From.Id, out string value_1))
 			{
 				Console.WriteLine($"Received a text message from unauthorized user with id {e.Message.From.ToString()}.");
-				botClient.SendTextMessageAsync(
+                await botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: $"Дружок, ты не авторизован! Попроси [Димана](tg://user?id=168694373), чтобы добавил тебя. Твой id {e.Message.From.Id}",
 							parseMode: ParseMode.Markdown
@@ -192,52 +262,50 @@ namespace TlgrmBot
 			if (e.CallbackQuery.Data != null)
 			{
 				Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Received a callback query \"{e.CallbackQuery.Data}\" in chat with {users[e.CallbackQuery.From.Id]}.");
-                botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
+                await botClient.DeleteMessageAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId);
 
                 switch (Regex.Replace(e.CallbackQuery.Data, @"[\d-]", string.Empty))
 				{
 					case "today":
 					case "tomorrow":
 
-                        InlineKeyboardButton[][] kb_start_hours = CreateStartHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
+                        List<List<InlineKeyboardButton>> startHoursKeyboard = CreateStartHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
 
-						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						botClient.SendTextMessageAsync(
+						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+                        await botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"Со скольки?",
-							replyMarkup: new InlineKeyboardMarkup(kb_start_hours)
+							replyMarkup: new InlineKeyboardMarkup(startHoursKeyboard)
 						);
-
-						calendarEvent.Date = e.CallbackQuery.Data;
+                        calendarEvents[e.CallbackQuery.From.Id].Date = e.CallbackQuery.Data;
 						break;
 
 					case "start":
 						//0-16
-						InlineKeyboardButton[][] kb_end_hours = CreateEndHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
+						List<List<InlineKeyboardButton>> endHoursKeyboard = CreateEndHoursKeyboard(e.CallbackQuery.Message.Chat.Id);
 
-                        botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						botClient.SendTextMessageAsync(
+                        await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+                        await botClient.SendTextMessageAsync(
 							chatId: e.CallbackQuery.From.Id,
 							text: $"И до скольки?",
-							replyMarkup: new InlineKeyboardMarkup(kb_end_hours)
+							replyMarkup: new InlineKeyboardMarkup(endHoursKeyboard)
 						);
-						calendarEvent.Start = int.Parse(e.CallbackQuery.Data.Replace("start", string.Empty));
+                        calendarEvents[e.CallbackQuery.From.Id].Start = int.Parse(e.CallbackQuery.Data.Replace("start", string.Empty));
 						break;
 
 					case "end":
-						//1-18
-						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						calendarEvent.End = int.Parse(e.CallbackQuery.Data.Replace("end", string.Empty));
+                        //1-18
+                        await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+                        calendarEvents[e.CallbackQuery.From.Id].End = int.Parse(e.CallbackQuery.Data.Replace("end", string.Empty));
 
 						if (users[e.CallbackQuery.From.Id] != null)
 						{
-							calendarEvent.Name = users[e.CallbackQuery.From.Id];
-
+                            calendarEvents[e.CallbackQuery.From.Id].Name = users[e.CallbackQuery.From.Id];
                         }
 						else
 						{
-							CalendarEvent.Clear(calendarEvent);
-							break;
+                            CalendarEvent.Clear(calendarEvents[e.CallbackQuery.From.Id]);
+                            break;
 						}
 
 						string author;
@@ -263,14 +331,14 @@ namespace TlgrmBot
                         }
                         DateTime workdayBeginningUTC = new DateTime(nowMSC.Year, nowMSC.Month, nowMSC.Day, start_hour - 3, start_min, 0, DateTimeKind.Utc);
 
-						if (calendarEvent.Date == "tomorrow") { workdayBeginningUTC = workdayBeginningUTC.AddDays(1); }
+						if (calendarEvents[e.CallbackQuery.From.Id].Date == "tomorrow") { workdayBeginningUTC = workdayBeginningUTC.AddDays(1); }
 
-						DateTime start = workdayBeginningUTC.AddMinutes(calendarEvent.Start * 30);
-						DateTime end = workdayBeginningUTC.AddMinutes(calendarEvent.End * 30);
+						DateTime start = workdayBeginningUTC.AddMinutes(calendarEvents[e.CallbackQuery.From.Id].Start * 30);
+						DateTime end = workdayBeginningUTC.AddMinutes(calendarEvents[e.CallbackQuery.From.Id].End * 30);
 
 						Event lrEvent = new Event
 						{
-							Summary = $"{calendarEvent.Name}'s leave request",
+							Summary = $"{calendarEvents[e.CallbackQuery.From.Id].Name}'s leave request",
 							//Location = "Somewhere",
 							Start = new EventDateTime()
 							{
@@ -287,7 +355,7 @@ namespace TlgrmBot
 
 						if (lrEvent.Start.DateTime < lrEvent.End.DateTime)
 						{
-							if (calendarEvent.Name != "")
+							if (calendarEvents[e.CallbackQuery.From.Id].Name != "")
 							{
 								Event recurringEvent = service.Events.Insert(lrEvent, calendarID).Execute();
 
@@ -306,7 +374,7 @@ namespace TlgrmBot
 									};
 
 								string day = (DateTime.UtcNow.AddHours(3).Date == lrEvent.Start.DateTime.Value.Date) ? "Сегодня" : "Завтра";
-								botClient.SendTextMessageAsync(
+                                await botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										parseMode: ParseMode.Markdown,
 										text: $"Cобытие *[{lrEvent.Summary}]* было успешно создано \n{day}, с *{from}* до *{to}*\n\nПоставил случайно или ошибся? Можно удалить!",
@@ -315,16 +383,16 @@ namespace TlgrmBot
 							}
 							else
 							{
-								CalendarEvent.Clear(calendarEvent);
-								botClient.SendTextMessageAsync(
+                                CalendarEvent.Clear(calendarEvents[e.CallbackQuery.From.Id]);
+                                await botClient.SendTextMessageAsync(
 										chatId: e.CallbackQuery.From.Id,
 										text: $"Что-то пошло не так... попробуй ещё раз /start");
 							}
 						}
 						else
 						{
-							CalendarEvent.Clear(calendarEvent);
-							botClient.SendTextMessageAsync(
+                            CalendarEvent.Clear(calendarEvents[e.CallbackQuery.From.Id]);
+                            await botClient.SendTextMessageAsync(
 									chatId: e.CallbackQuery.From.Id,
 									text: $"Время окончания события указано раньше, время начала... попробуй ещё раз /start");
 						}
@@ -332,12 +400,12 @@ namespace TlgrmBot
 						break;
 
 					case "cancel":
-						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
-						CalendarEvent.Clear(calendarEvent);
-						break;
+                        await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+                        CalendarEvent.Clear(calendarEvents[e.CallbackQuery.From.Id]);
+                        break;
 
 					default:
-						botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
+                        await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
 
 						if (e.CallbackQuery.Data.Substring(0,6) == "delete")
 						{
@@ -345,7 +413,7 @@ namespace TlgrmBot
                             try
                             {
                                 service.Events.Delete(calendarID, eventId).Execute();
-                                botClient.SendTextMessageAsync(
+                                await botClient.SendTextMessageAsync(
                                 chatId: e.CallbackQuery.From.Id,
                                 text: $"Событие удалено!");
                             }
@@ -353,38 +421,39 @@ namespace TlgrmBot
                             {
                                 Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Exeption: {ex.Message}");
 
-                                botClient.SendTextMessageAsync(
+                                await botClient.SendTextMessageAsync(
                                 chatId: e.CallbackQuery.From.Id,
                                 text: $"Событие уже было удалено!");
                             }
 						}
 						else
 						{
-							botClient.SendTextMessageAsync(
+                            await botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: "Я не знаю такой команды, смотри /help"
 							);
 						}
 
-						CalendarEvent.Clear(calendarEvent);
-						break;
+                        CalendarEvent.Clear(calendarEvents[e.CallbackQuery.From.Id]);
+                        break;
 				}
 			}
 		}
 
-        private static InlineKeyboardButton[][] CreateEndHoursKeyboard(long chatId)
+        private static List<List<InlineKeyboardButton>> CreateEndHoursKeyboard(long chatId)
         {
-            InlineKeyboardButton[] endButtonRow5 = new InlineKeyboardButton[]
+            List<InlineKeyboardButton> endButtonRow5 = new List<InlineKeyboardButton>
                 {
-                    InlineKeyboardButton.WithCallbackData("18:45", "end17"),
-                    InlineKeyboardButton.WithCallbackData("19:15", "end18")
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, 17), "end17" ),
+                    InlineKeyboardButton.WithCallbackData(TimeValue(chatId, 18), "end18" )
                 };
 
-            InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
+            List<InlineKeyboardButton> cancelButtonRow = new List<InlineKeyboardButton>
                 {
                     InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
                 };
-            return new InlineKeyboardButton[][]
+
+            return new List<List<InlineKeyboardButton>>
                 {
                                 CreateEndButtonRow(chatId, 0),
                                 CreateEndButtonRow(chatId, 1),
@@ -395,9 +464,9 @@ namespace TlgrmBot
                 };
         }
 
-        private static InlineKeyboardButton[] CreateEndButtonRow(long chatId, int rowId)
+        private static List<InlineKeyboardButton> CreateEndButtonRow(long chatId, int rowId)
         {
-            return new InlineKeyboardButton[]
+            return new List<InlineKeyboardButton>
                 {
                     InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 1), "end" + (rowId * 4 + 1).ToString() ),
                     InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 2), "end" + (rowId * 4 + 2).ToString() ),
@@ -406,19 +475,19 @@ namespace TlgrmBot
                 };
         }
 
-        private static InlineKeyboardButton[][] CreateStartHoursKeyboard(long chatId)
+        private static List<List<InlineKeyboardButton>> CreateStartHoursKeyboard(long chatId)
         {
-            InlineKeyboardButton[] startButtonRow = new InlineKeyboardButton[]
+            List<InlineKeyboardButton> startButtonRow = new List<InlineKeyboardButton>
                 {
                     InlineKeyboardButton.WithCallbackData(TimeValue(chatId, 0), "start0")
                 };
 
-            InlineKeyboardButton[] cancelButtonRow = new InlineKeyboardButton[]
+            List<InlineKeyboardButton> cancelButtonRow = new List<InlineKeyboardButton>
                 {
                     InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
                 };
 
-            return new InlineKeyboardButton[][]
+            return new List<List<InlineKeyboardButton>>
                             {
                                 startButtonRow,
                                 CreateStartButtonRow(chatId, 0),
@@ -429,9 +498,9 @@ namespace TlgrmBot
                             };
         }
 
-        private static InlineKeyboardButton[] CreateStartButtonRow(long chatId, int rowId)
+        private static List<InlineKeyboardButton> CreateStartButtonRow(long chatId, int rowId)
         {
-            return new InlineKeyboardButton[]
+            return new List<InlineKeyboardButton>
                 {
                     InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 1), "start" + (rowId * 4 + 1).ToString() ),
                     InlineKeyboardButton.WithCallbackData(TimeValue(chatId, rowId * 4 + 2), "start" + (rowId * 4 + 2).ToString() ),
@@ -455,12 +524,18 @@ namespace TlgrmBot
             int hour_with_delta = start_hour + (30 * delta) / 60;
             int min_with_delta = (start_min + 30 * delta) % 60;
             string mins_with_zero;
-            if (min_with_delta == 0) { mins_with_zero = "00"; }
-            else { mins_with_zero = min_with_delta.ToString(); }
+            if (min_with_delta == 0)
+            {
+                mins_with_zero = "00";
+            }
+            else
+            {
+                mins_with_zero = min_with_delta.ToString();
+            }
 
             string[] time = { hour_with_delta.ToString(), mins_with_zero };
-            return string.Join(":", time);
 
+            return string.Join(":", time);
         }
     }
 }
