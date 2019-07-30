@@ -4,7 +4,7 @@ using System.Text;
 
 namespace TlgrmBot
 {
-	public class CalendarEvent
+	public class LeaveRequestEvent
 	{
 		public string Name { get; set; }
 		public string Date { get; set; }
@@ -12,7 +12,7 @@ namespace TlgrmBot
 		public int End { get; set; }
 		public int FromTlgrmID { get; set; }
 
-		public CalendarEvent()
+		public LeaveRequestEvent()
 		{
 			Name = "";
 			Date = "";
@@ -20,7 +20,7 @@ namespace TlgrmBot
 			End = 0;
 		}
 
-		static public void Clear(CalendarEvent ev)
+		static public void Clear(LeaveRequestEvent ev)
 		{
 			ev.Name = "";
 			ev.Date = "";
