@@ -94,9 +94,11 @@ namespace LeaveRequestsBot
 							chatId: e.Message.Chat,
 							text: "Утром лицо застряло в текстурах подушки? Бот добавит/удалит событие в календаре [[SED]] *\"Leave Requests\"*" +
 							"\n\n/start \"Диме плохо\" или добавить leave request" +
+							"\n/dayoff \"Диме нужен день\" или добавить day off" +
 							"\n/sick \"Диме *очень* плохо\" или добавить sick leave" +
 							"\n/del если выбрался из текстур и нужно удалить событие" +
-							"\n/show те кто не смог сегодня или не сможет завтра",
+							"\n/show те кто не смог сегодня или не сможет завтра (события добавленные только через бота)" +
+							"\n/showall все события из календаря на сегодня",
 							parseMode: ParseMode.Markdown
 						);
 						break;
@@ -185,6 +187,49 @@ namespace LeaveRequestsBot
 						await botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
 							text: msg,
+							replyMarkup: new InlineKeyboardMarkup(_kbBuilder.ShowKeyboard()),
+							parseMode: ParseMode.Markdown
+						);
+						break;
+
+					case "/showall":
+						var listReq = _service.Events.List(calendarId);
+						listReq.TimeMin = DateTime.UtcNow.Date;
+						listReq.TimeMax = DateTime.UtcNow.Date.AddDays(1).AddHours(-3);
+						var allEvents = listReq.Execute().Items;
+
+						IList<Event> allEvs = allEvents.
+							OrderBy(ev => ev.Start.DateTime).
+							ThenBy(ev => ev.End.DateTime).
+							ThenBy(ev => ev.Start.Date).
+							ThenBy(ev => ev.End.Date).
+							ThenBy(ev => ev.Summary).
+							ToList();
+
+						var allMsg = "В общем календаре на сегодня нет созданных событий 🤷‍♂️";
+
+						if (allEvs.Count > 0)
+						{
+
+							allMsg = "События в общем календаре на сегодня:\n";
+							foreach (var ev in allEvs)
+							{
+								var delta = 3 - (DateTime.Now.Hour - DateTime.UtcNow.Hour); // 3 hour - for MSC time shift
+
+								if (ev.Start.DateTime != null && ev.End.DateTime != null)
+								{
+									allMsg += $"\n{ev.Summary} | {string.Format("{0:HH:mm}", ev.Start.DateTime.Value.AddHours(delta))} - {string.Format("{0:HH:mm}", ev.End.DateTime.Value.AddHours(delta))}";
+								}
+								else
+								{
+									allMsg += $"\n[[ALL DAY]] {ev.Summary}";
+								}
+							}
+						}
+
+						await botClient.SendTextMessageAsync(
+							chatId: e.Message.Chat,
+							text: allMsg,
 							replyMarkup: new InlineKeyboardMarkup(_kbBuilder.ShowKeyboard()),
 							parseMode: ParseMode.Markdown
 						);
