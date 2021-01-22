@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.28010.2036
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30804.86
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "leave_request_bot", "leave_request_bot\leave_request_bot.csproj", "{F6611986-FB7B-471A-AB03-6461F7DF67FA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LeaveRequestsBot", "LeaveRequestsBot\LeaveRequestsBot.csproj", "{F6611986-FB7B-471A-AB03-6461F7DF67FA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

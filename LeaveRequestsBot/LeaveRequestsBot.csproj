@@ -90,6 +90,7 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="KeyboardBuilder.cs" />
     <Compile Include="SickLeaveEvent.cs" />
     <Compile Include="LeaveRequestEvent.cs" />
     <Compile Include="Helper.cs" />
@@ -105,10 +106,10 @@
       <SubType>Designer</SubType>
     </None>
     <None Include="starts.csv">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="users.csv">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

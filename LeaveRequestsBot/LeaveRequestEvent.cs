@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace TlgrmBot
+﻿namespace LeaveRequestsBot
 {
 	public class LeaveRequestEvent
 	{
@@ -10,7 +6,6 @@ namespace TlgrmBot
 		public string Date { get; set; }
 		public int Start { get; set; }
 		public int End { get; set; }
-		public int FromTlgrmID { get; set; }
 
 		public LeaveRequestEvent()
 		{

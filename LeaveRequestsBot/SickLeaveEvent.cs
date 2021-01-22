@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 
-namespace TlgrmBot
+namespace LeaveRequestsBot
 {
 	public class SickLeaveEvent
 	{
@@ -17,12 +15,12 @@ namespace TlgrmBot
 			Date = "";
 		}
 
-		static public void Clear(SickLeaveEvent ev)
+		public static void Clear(SickLeaveEvent ev)
 		{
 			ev.Name = "";
 			ev.Date = "";
 			ev.Start = new DateTime(1900, 1, 1);
 			ev.End = new DateTime(1900, 1, 1);
-        }
+		}
 	}
 }
