@@ -32,6 +32,7 @@ namespace LeaveRequestsBot
 		static readonly Dictionary<long, LeaveRequestEvent> leaveRequestEvents = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => new LeaveRequestEvent());
 		static readonly Dictionary<long, SickLeaveEvent> sickLeaveEvents = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => new SickLeaveEvent());
 		static readonly Dictionary<long, SickLeaveEvent> dayoffEvents = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => new SickLeaveEvent());
+		static readonly Dictionary<long, SickLeaveEvent> vacationEvents = File.ReadLines(Helper.FullPathToFile(@"starts.csv")).Select(line => line.Split(';')).ToDictionary(line => long.Parse(line[0]), line => new SickLeaveEvent());
 		// check that NumberOfTimeButtons * TimeButtonsDiff == 60
 		private static readonly int NumberOfTimeButtons = 6;
 		private static readonly int TimeButtonsDiff = 10;
@@ -92,10 +93,11 @@ namespace LeaveRequestsBot
 					case "/?":
 						await botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
-							text: "Утром лицо застряло в текстурах подушки? Бот добавит/удалит событие в календаре [[SED]] *\"Leave Requests\"*" +
+							text: "Утром лицо застряло в текстурах подушки? Бот добавит/удалит событие в календаре *Leave Requests (1WS SED)*" +
 							"\n\n/start \"Диме плохо\" или добавить leave request" +
 							"\n/dayoff \"Диме нужен день\" или добавить day off" +
 							"\n/sick \"Диме *очень* плохо\" или добавить sick leave" +
+							"\n/vacation \"Дима на вакации\" или добавить vacation" +
 							"\n/del если выбрался из текстур и нужно удалить событие" +
 							"\n/show те кто не смог сегодня или не сможет завтра (события добавленные только через бота)" +
 							"\n/showall все события из календаря на сегодня",
@@ -179,6 +181,10 @@ namespace LeaveRequestsBot
 									else if (ev.Summary.Contains("'s day off"))
 									{
 										msg += $"\n[[DO]] {ev.Summary.Replace("'s day off", string.Empty)} |  {start} >>> {end}";
+									}
+									else if (ev.Summary.Contains("'s vacation"))
+									{
+										msg += $"\n[[PTO]] {ev.Summary.Replace("'s vacation", string.Empty)} |  {start} >>> {end}";
 									}
 								}
 							}
@@ -266,6 +272,17 @@ namespace LeaveRequestsBot
 						);
 						break;
 
+					case "/vacation":
+
+						var vacationKeyboard = _kbBuilder.CalendarKeyboard(DateTime.UtcNow.AddHours(3), "vacation_start");
+
+						await botClient.SendTextMessageAsync(
+							chatId: e.Message.Chat,
+							text: "С какого дня ты берёшь отпуск?",
+							replyMarkup: new InlineKeyboardMarkup(vacationKeyboard)
+						);
+						break;
+
 					default:
 						await botClient.SendTextMessageAsync(
 							chatId: e.Message.Chat,
@@ -339,6 +356,22 @@ namespace LeaveRequestsBot
 						);
 						break;
 
+					case "vacation_start":
+
+						await MessageDeletionOnCallback(e);
+						var vacationStartTicks = long.Parse(e.CallbackQuery.Data.Substring(14));
+
+						vacationEvents[e.CallbackQuery.From.Id].Start = new DateTime(vacationStartTicks);
+
+						var vacationEndKeyboard = _kbBuilder.CalendarKeyboard(DateTime.UtcNow.AddHours(3), "vacation_end");
+
+						await botClient.SendTextMessageAsync(
+							chatId: e.CallbackQuery.From.Id,
+							text: "До какого дня у тебя отпуск?\nВыбери последний отпускной день",
+							replyMarkup: new InlineKeyboardMarkup(vacationEndKeyboard)
+						);
+						break;
+
 					case "sick_end":
 
 						await MessageDeletionOnCallback(e);
@@ -372,7 +405,7 @@ namespace LeaveRequestsBot
 									chatId: e.CallbackQuery.From.Id,
 									parseMode: ParseMode.Markdown,
 									text: $"Cобытие *[{sickEvent.Summary}]* было успешно создано \nс *{sickLeave.Start.ToShortDateString()}* по *{sickLeave.End.ToShortDateString()}*\n\nПоставил случайно или ошибся? Можно удалить!",
-									replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmSickKeyboard(recurringEvent.Id))
+									replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmKeyboard(recurringEvent.Id, "sick"))
 									);
 						}
 						else
@@ -418,12 +451,58 @@ namespace LeaveRequestsBot
 								chatId: e.CallbackQuery.From.Id,
 								parseMode: ParseMode.Markdown,
 								text: $"Cобытие *[{dayoffEvent.Summary}]* было успешно создано \nс *{dayoff.Start.ToShortDateString()}* по *{dayoff.End.ToShortDateString()}*\n\nПоставил случайно или ошибся? Можно удалить!",
-								replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmSickKeyboard(recurringEvent.Id))
+								replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmKeyboard(recurringEvent.Id, "dayoff"))
 							);
 						}
 						else
 						{
 							SickLeaveEvent.Clear(dayoffEvents[e.CallbackQuery.From.Id]);
+							await botClient.SendTextMessageAsync(
+								chatId: e.CallbackQuery.From.Id,
+								text: "Время окончания события указано раньше времени начала... попробуй ещё раз /start");
+						}
+
+						break;
+
+					case "vacation_end":
+
+						await MessageDeletionOnCallback(e);
+						var vacationEndTicks = long.Parse(e.CallbackQuery.Data.Substring(12));
+
+						vacationEvents[e.CallbackQuery.From.Id].End = new DateTime(vacationEndTicks);
+						vacationEvents[e.CallbackQuery.From.Id].Name = users[e.CallbackQuery.From.Id];
+
+						var vacation = vacationEvents[e.CallbackQuery.From.Id];
+
+
+						var vacationEvent = new Event
+						{
+							Summary = $"{vacation.Name}'s vacation",
+							Start = new EventDateTime
+							{
+								Date = string.Format("{0:yyyy-MM-dd}", vacation.Start)
+							},
+							End = new EventDateTime
+							{
+								Date = string.Format("{0:yyyy-MM-dd}", vacation.End.AddDays(1))
+							},
+							Description = "Event created using telegram bot"
+						};
+
+						if (vacation.Start <= vacation.End)
+						{
+							var recurringEvent = _service.Events.Insert(vacationEvent, calendarId).Execute();
+
+							await botClient.SendTextMessageAsync(
+								chatId: e.CallbackQuery.From.Id,
+								parseMode: ParseMode.Markdown,
+								text: $"Cобытие *[{vacationEvent.Summary}]* было успешно создано \nс *{vacation.Start.ToShortDateString()}* по *{vacation.End.ToShortDateString()}*\n\nПоставил случайно или ошибся? Можно удалить!",
+								replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmKeyboard(recurringEvent.Id, "vacation"))
+							);
+						}
+						else
+						{
+							SickLeaveEvent.Clear(vacationEvents[e.CallbackQuery.From.Id]);
 							await botClient.SendTextMessageAsync(
 								chatId: e.CallbackQuery.From.Id,
 								text: "Время окончания события указано раньше времени начала... попробуй ещё раз /start");
@@ -515,7 +594,7 @@ namespace LeaveRequestsBot
 										chatId: e.CallbackQuery.From.Id,
 										parseMode: ParseMode.Markdown,
 										text: $"Cобытие *[{lrEvent.Summary}]* было успешно создано \n{day}, с *{from}* до *{to}*\n\nПоставил случайно или ошибся? Можно удалить!",
-										replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmLRKeyboard(recurringEvent.Id))
+										replyMarkup: new InlineKeyboardMarkup(_kbBuilder.DelOrConfirmKeyboard(recurringEvent.Id, "lr"))
 										);
 							}
 							else
@@ -548,22 +627,24 @@ namespace LeaveRequestsBot
 						await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id);
 						break;
 
-					case "cancel":
 					case "ok_show":
 					case "ok_deletion":
 					case "ok_host":
-					case "cancel_deletion":
 					case "confirm_lr":
 					case "confirm_sick":
+					case "confirm_dayoff":
+					case "confirm_vacation":
+					case "cancel_deletion":
 					case "cancel_start_hours":
 					case "cancel_end_hours":
 					case "cancel_days":
-					case "cancel_sick":
 					case "cancel_calendar":
 
 						await MessageDeletionOnCallback(e);
 
 						SickLeaveEvent.Clear(sickLeaveEvents[e.CallbackQuery.From.Id]);
+						SickLeaveEvent.Clear(dayoffEvents[e.CallbackQuery.From.Id]);
+						SickLeaveEvent.Clear(vacationEvents[e.CallbackQuery.From.Id]);
 						LeaveRequestEvent.Clear(leaveRequestEvents[e.CallbackQuery.From.Id]);
 						break;
 
@@ -605,8 +686,10 @@ namespace LeaveRequestsBot
 							);
 						}
 
-						LeaveRequestEvent.Clear(leaveRequestEvents[e.CallbackQuery.From.Id]);
 						SickLeaveEvent.Clear(sickLeaveEvents[e.CallbackQuery.From.Id]);
+						SickLeaveEvent.Clear(dayoffEvents[e.CallbackQuery.From.Id]);
+						SickLeaveEvent.Clear(vacationEvents[e.CallbackQuery.From.Id]);
+						LeaveRequestEvent.Clear(leaveRequestEvents[e.CallbackQuery.From.Id]);
 						break;
 				}
 			}
@@ -632,6 +715,9 @@ namespace LeaveRequestsBot
 			{
 				await botClient.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "удоли через контекстное меню");
 				Console.WriteLine($"{string.Format("{0:[HH:mm:ss] dd.MM.yy}", DateTime.Now)} - Old message deletion attempt {e.CallbackQuery.Message.Date} in chat with {users[e.CallbackQuery.From.Id]}");
+				SickLeaveEvent.Clear(sickLeaveEvents[e.CallbackQuery.From.Id]);
+				SickLeaveEvent.Clear(dayoffEvents[e.CallbackQuery.From.Id]);
+				SickLeaveEvent.Clear(vacationEvents[e.CallbackQuery.From.Id]);
 				LeaveRequestEvent.Clear(leaveRequestEvents[e.CallbackQuery.From.Id]);
 			}
 		}

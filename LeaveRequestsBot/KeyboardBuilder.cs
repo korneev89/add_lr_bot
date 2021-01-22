@@ -15,37 +15,6 @@ namespace LeaveRequestsBot
 		private int TimeButtonsDiff { get; }
 		private Dictionary<long, string> Starts { get; }
 
-		private List<InlineKeyboardButton> cancelDaysButtonRow = new List<InlineKeyboardButton>
-		{
-			InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel_days")
-		};
-
-		private List<InlineKeyboardButton> cancelDeletionButtonRow = new List<InlineKeyboardButton>
-		{
-			InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel_deletion")
-		};
-
-		private List<InlineKeyboardButton> okShowButtonRow = new List<InlineKeyboardButton>
-		{
-			InlineKeyboardButton.WithCallbackData("✅ ОK", "ok_show")
-		};
-
-		private List<InlineKeyboardButton> okDeletionButtonRow = new List<InlineKeyboardButton>
-		{
-			InlineKeyboardButton.WithCallbackData("✅ ОK", "ok_deletion")
-		};
-
-		private List<InlineKeyboardButton> okHostButtonRow = new List<InlineKeyboardButton>
-		{
-			InlineKeyboardButton.WithCallbackData("✅ ОK", "ok_host")
-		};
-
-		private List<InlineKeyboardButton> daysButtonRow = new List<InlineKeyboardButton>
-		{
-			InlineKeyboardButton.WithCallbackData("сегодня", "today"),
-			InlineKeyboardButton.WithCallbackData("завтра", "tomorrow")
-		};
-
 		public KeyboardBuilder(int numberOfTimeButtons, int timeButtonsDiff, Dictionary<long, string> starts)
 		{
 			NumberOfTimeButtons = numberOfTimeButtons;
@@ -105,6 +74,11 @@ namespace LeaveRequestsBot
 
 		public List<List<InlineKeyboardButton>> ShowKeyboard()
 		{
+			var okShowButtonRow = new List<InlineKeyboardButton>
+			{
+				InlineKeyboardButton.WithCallbackData("✅ ОK", "ok_show")
+			};
+
 			return new List<List<InlineKeyboardButton>>
 			{
 				okShowButtonRow
@@ -113,6 +87,11 @@ namespace LeaveRequestsBot
 
 		public List<List<InlineKeyboardButton>> HostKeyboard()
 		{
+			var okHostButtonRow = new List<InlineKeyboardButton>
+			{
+				InlineKeyboardButton.WithCallbackData("✅ ОK", "ok_host")
+			};
+
 			return new List<List<InlineKeyboardButton>>
 			{
 				okHostButtonRow
@@ -121,6 +100,17 @@ namespace LeaveRequestsBot
 
 		public List<List<InlineKeyboardButton>> DaysKeyboard()
 		{
+			var daysButtonRow = new List<InlineKeyboardButton>
+			{
+				InlineKeyboardButton.WithCallbackData("сегодня", "today"),
+				InlineKeyboardButton.WithCallbackData("завтра", "tomorrow")
+			};
+
+			var cancelDaysButtonRow = new List<InlineKeyboardButton>
+			{
+				InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel_days")
+			};
+
 			return new List<List<InlineKeyboardButton>>
 			{
 				daysButtonRow,
@@ -128,25 +118,11 @@ namespace LeaveRequestsBot
 			};
 		}
 
-		public List<List<InlineKeyboardButton>> DelOrConfirmSickKeyboard(string recurringEventId)
+		public List<List<InlineKeyboardButton>> DelOrConfirmKeyboard(string recurringEventId, string eventName)
 		{
 			var delOrConfirmRow = new List<InlineKeyboardButton>
 			{
-				InlineKeyboardButton.WithCallbackData("✅ Оставить событие", "confirm_sick"),
-				InlineKeyboardButton.WithCallbackData("❌ Удалить событие", $"delete{recurringEventId}")
-			};
-
-			return new List<List<InlineKeyboardButton>>
-			{
-				delOrConfirmRow
-			};
-		}
-
-		public List<List<InlineKeyboardButton>> DelOrConfirmLRKeyboard(string recurringEventId)
-		{
-			var delOrConfirmRow = new List<InlineKeyboardButton>
-			{
-				InlineKeyboardButton.WithCallbackData("✅ Оставить событие", "confirm_lr"),
+				InlineKeyboardButton.WithCallbackData("✅ Оставить событие", $"confirm_{eventName}"),
 				InlineKeyboardButton.WithCallbackData("❌ Удалить событие", $"delete{recurringEventId}")
 			};
 
@@ -284,13 +260,13 @@ namespace LeaveRequestsBot
 				}
 			}
 
-			var sickLeavesAndDayoffs = service.Events.List(calendarId);
-			sickLeavesAndDayoffs.TimeMin = DateTime.UtcNow.Date.AddDays(-14);
-			var allsickLeavesAndDayoffs = sickLeavesAndDayoffs.Execute().Items;
+			var events = service.Events.List(calendarId);
+			events.TimeMin = DateTime.UtcNow.Date.AddDays(-14);
+			var allEvents = events.Execute().Items;
 
-			if (allsickLeavesAndDayoffs.Count > 0)
+			if (allEvents.Count > 0)
 			{
-				IList<Event> userDayoffs = allsickLeavesAndDayoffs.Where(
+				IList<Event> userDayoffs = allEvents.Where(
 						ev => ev.Creator?.Email == "dmitri.korneev@cbsinteractive.com"
 						      && ev.Summary == $"{users[e.Message.From.Id]}'s day off")
 					.OrderBy(ev => ev.Start.Date)
@@ -318,7 +294,7 @@ namespace LeaveRequestsBot
 							}));
 				}
 
-				IList<Event> userSickLeaves = allsickLeavesAndDayoffs.Where(
+				IList<Event> userSickLeaves = allEvents.Where(
 						ev => ev.Creator?.Email == "dmitri.korneev@cbsinteractive.com"
 							&& ev.Summary == $"{users[e.Message.From.Id]}'s sick leave")
 					.OrderBy(ev => ev.Start.Date)
@@ -345,9 +321,46 @@ namespace LeaveRequestsBot
 								};
 							}));
 				}
+				IList<Event> userVacations = allEvents.Where(
+						ev => ev.Creator?.Email == "dmitri.korneev@cbsinteractive.com"
+						      && ev.Summary == $"{users[e.Message.From.Id]}'s vacation")
+					.OrderBy(ev => ev.Start.Date)
+					.ThenBy(ev => ev.End.Date)
+					.ToList();
+
+				if (userVacations.Count > 0)
+				{
+					deletionKeyboard.AddRange(
+						userVacations
+							.Select(ev =>
+							{
+								var end = DateTime
+									.ParseExact(ev.End.Date, "yyyy-MM-dd",
+										System.Globalization.CultureInfo.InvariantCulture)
+									.AddDays(-1)
+									.ToString("yyyy-MM-dd");
+
+								return new List<InlineKeyboardButton>
+								{
+									InlineKeyboardButton.WithCallbackData(
+										$"[PTO] {ev.Start.Date} >>> {end}",
+										$"delete{ev.Id}")
+								};
+							}));
+				}
 			}
 
-			deletionKeyboard.Add(deletionKeyboard.Count > 0 ? cancelDeletionButtonRow : okDeletionButtonRow);
+			var okDeletionButtonRow = new List<InlineKeyboardButton>
+			{
+				InlineKeyboardButton.WithCallbackData("✅ ОK", "ok_deletion")
+			};
+
+			var cancelDeletionButtonRow = new List<InlineKeyboardButton>
+			{
+				InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel_deletion")
+			};
+
+		deletionKeyboard.Add(deletionKeyboard.Count > 0 ? cancelDeletionButtonRow : okDeletionButtonRow);
 
 			return deletionKeyboard;
 		}
